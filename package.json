@@ -1,0 +1,39 @@
+{
+    "name": "hackathon-aws",
+    "private": true,
+    "workspaces": [
+        "services/*",
+        "packages/*",
+        "apps/*"
+    ],
+    "devDependencies": {
+        "typescript": "^5.6.3"
+    },
+    "scripts": {
+        "build": "npm -ws run build",
+        "lint": "echo skip",
+        "test": "npm -ws run test",
+        "test:coverage": "npm -ws run test:coverage",
+        "setup-webhook": "./scripts/setup-webhook.sh",
+        "test-ingestion": "cd scripts && node test-ingestion.js",
+        "start-webhook": "cd scripts && npm start",
+        "dev": "cd scripts && node local-dev-server.js",
+        "test-local": "cd scripts && node test-local.js",
+        "scrape": "cd scripts && npm run scrape",
+        "scrape-twitter": "cd scripts && npm run scrape-twitter",
+        "scrape-reddit": "cd scripts && npm run scrape-reddit",
+        "scrape-advanced": "cd scripts && npm run scrape-advanced",
+        "crowd-detect": "cd scripts && npm run crowd-detect",
+        "enhanced-detect": "cd scripts && npm run enhanced-detect",
+        "comprehend-analyze": "cd scripts && npm run comprehend-analyze",
+        "image-location": "cd scripts && npm run image-location",
+        "verify-disaster": "cd scripts && npm run verify-disaster",
+        "dynamodb-storage": "cd scripts && npm run dynamodb-storage",
+        "test-dynamodb": "cd scripts && npm run test-dynamodb",
+        "sns-notifications": "cd scripts && npm run sns-notifications",
+        "sns-subscriptions": "cd scripts && npm run sns-subscriptions",
+        "notification-destinations": "cd scripts && npm run notification-destinations",
+        "comprehensive-system": "cd scripts && node comprehensive-disaster-system.js",
+        "enhanced-comprehensive": "cd scripts && npm run enhanced-comprehensive"
+    }
+}

@@ -1,0 +1,14 @@
+# Google Cloud Configuration Example
+# Copy this to your .env file
+
+# AWS Configuration
+AWS_REGION=us-east-1
+AWS_PROFILE=awsisb_IsbUsersPS-843976229055
+
+# Google Cloud Configuration
+GOOGLE_CLOUD_PROJECT_ID=your-project-id-here
+GOOGLE_TRANSLATE_API_KEY=your-api-key-here
+
+# Application Configuration
+NODE_ENV=development
+LOG_LEVEL=debug

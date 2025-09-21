@@ -1,0 +1,374 @@
+service: disaster-alert-system
+frameworkVersion: '4'
+provider:
+  name: aws
+  region: us-east-1
+  runtime: nodejs20.x
+  environment:
+    # DynamoDB
+    EVENTS_TABLE: ${self:resources.Resources.EventsTable.Properties.TableName}
+    
+    # SNS
+    ALERTS_TOPIC_ARN: { Ref: AlertsTopic }
+    
+    # SQS Queues
+    SOCIAL_MEDIA_QUEUE_URL: { Ref: SocialMediaQueue }
+    PRIORITY_QUEUE_URL: { Ref: PriorityQueue }
+    DEAD_LETTER_QUEUE_URL: { Ref: DeadLetterQueue }
+    
+    # S3
+    IMAGES_BUCKET: { Ref: ImagesBucket }
+    
+    # External APIs (from local .env for deployment)
+    MAPS_API_KEY: ${env:MAPS_API_KEY, ''}
+    
+    # AWS Secrets Manager
+    SOCIAL_MEDIA_CREDENTIALS_SECRET: disaster-alert/social-media-credentials
+    
+    # AWS Account Info
+    AWS_ACCOUNT_ID: { Ref: AWS::AccountId }
+    AWS_REGION: ${self:provider.region}
+    
+    # Application Configuration
+    NODE_ENV: ${env:NODE_ENV, 'production'}
+    LOG_LEVEL: ${env:LOG_LEVEL, 'info'}
+    
+    # CloudWatch
+    CLOUDWATCH_LOG_GROUP: /aws/lambda/disaster-alert-system
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:PutItem
+            - dynamodb:UpdateItem
+            - dynamodb:Query
+            - dynamodb:GetItem
+            - dynamodb:Scan
+          Resource:
+            - { 'Fn::GetAtt': [ EventsTable, Arn ] }
+        - Effect: Allow
+          Action:
+            - sns:Publish
+            - sns:Subscribe
+          Resource:
+            - { Ref: AlertsTopic }
+        - Effect: Allow
+          Action:
+            - comprehend:DetectEntities
+            - comprehend:DetectSentiment
+            - comprehend:DetectDominantLanguage
+          Resource: '*'
+        - Effect: Allow
+          Action:
+            - rekognition:DetectLabels
+            - rekognition:DetectText
+            - rekognition:DetectModerationLabels
+          Resource: '*'
+        - Effect: Allow
+          Action:
+            - sqs:SendMessage
+            - sqs:ReceiveMessage
+            - sqs:DeleteMessage
+            - sqs:GetQueueAttributes
+          Resource:
+            - { 'Fn::GetAtt': [ SocialMediaQueue, Arn ] }
+            - { 'Fn::GetAtt': [ PriorityQueue, Arn ] }
+            - { 'Fn::GetAtt': [ DeadLetterQueue, Arn ] }
+        - Effect: Allow
+          Action:
+            - s3:GetObject
+            - s3:PutObject
+            - s3:DeleteObject
+          Resource:
+            - { 'Fn::GetAtt': [ ImagesBucket, Arn ] }
+            - { 'Fn::Sub': [ '${ImagesBucket.Arn}/*', { ImagesBucket: { Ref: ImagesBucket } } ] }
+        - Effect: Allow
+          Action:
+            - secretsmanager:GetSecretValue
+          Resource:
+            - { 'Fn::Sub': 'arn:aws:secretsmanager:${AWS::Region}:${AWS::AccountId}:secret:disaster-alert/social-media-credentials*' }
+        - Effect: Allow
+          Action:
+            - lambda:InvokeFunction
+          Resource: '*'
+        - Effect: Allow
+          Action:
+            - logs:CreateLogGroup
+            - logs:CreateLogStream
+            - logs:PutLogEvents
+          Resource: '*'
+            - Effect: Allow
+              Action:
+                - cloudwatch:PutMetricData
+              Resource: '*'
+            - Effect: Allow
+              Action:
+                - events:PutEvents
+                - events:DescribeRule
+                - events:ListRules
+              Resource: '*'
+package:
+  individually: true
+functions:
+  processTweet:
+    handler: services/processing/dist/handlers/processTweet.handler
+    events:
+      - httpApi:
+          method: POST
+          path: /ingest/twitter
+          cors: true
+  getEvents:
+    handler: services/processing/dist/handlers/getEvents.handler
+    events:
+      - httpApi:
+          method: GET
+          path: /events
+          cors: true
+  subscribe:
+    handler: services/processing/dist/handlers/subscribe.handler
+    events:
+      - httpApi:
+          method: POST
+          path: /subscribe
+          cors: true
+  analyzeImage:
+    handler: services/processing/dist/handlers/analyzeImage.handler
+    timeout: 30
+    memorySize: 1024
+  socialMediaScraper:
+    handler: services/processing/dist/handlers/socialMediaScraper.handler
+    timeout: 300
+    memorySize: 1024
+    events:
+      - schedule:
+          rate: rate(5 minutes)
+          input:
+            platform: 'all'
+            maxResults: 100
+  processQueue:
+    handler: services/processing/dist/handlers/processQueue.handler
+    timeout: 60
+    events:
+      - schedule:
+          rate: rate(1 minute)
+  scheduledTasks:
+    handler: services/processing/dist/handlers/scheduledTasks.handler
+    timeout: 300
+    events:
+      - schedule:
+          rate: rate(10 minutes)
+      - schedule:
+          rate: cron(0 2 * * ? *)  # Daily at 2 AM for cleanup
+      - schedule:
+          rate: cron(0 * * * ? *)   # Hourly for metrics
+  cloudWatchAlarms:
+    handler: services/processing/dist/handlers/cloudWatchAlarms.handler
+    timeout: 60
+  secretsManager:
+    handler: services/processing/dist/handlers/secretsManager.handler
+    timeout: 60
+  iamPermissions:
+    handler: services/processing/dist/handlers/iamPermissions.handler
+    timeout: 60
+resources:
+  Resources:
+    EventsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: disaster-events
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: verified
+            AttributeType: N
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: verified-index
+            KeySchema:
+              - AttributeName: verified
+                KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+        TimeToLiveSpecification:
+          AttributeName: ttl
+          Enabled: true
+    AlertsTopic:
+      Type: AWS::SNS::Topic
+      Properties:
+        TopicName: disaster-alerts
+    SocialMediaQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: disaster-social-media-queue
+        VisibilityTimeoutSeconds: 300
+        MessageRetentionPeriod: 1209600  # 14 days
+        RedrivePolicy:
+          deadLetterTargetArn: { 'Fn::GetAtt': [ DeadLetterQueue, Arn ] }
+          maxReceiveCount: 3
+    PriorityQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: disaster-priority-queue
+        VisibilityTimeoutSeconds: 300
+        MessageRetentionPeriod: 1209600  # 14 days
+        RedrivePolicy:
+          deadLetterTargetArn: { 'Fn::GetAtt': [ DeadLetterQueue, Arn ] }
+          maxReceiveCount: 3
+    DeadLetterQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        QueueName: disaster-dead-letter-queue
+        MessageRetentionPeriod: 1209600  # 14 days
+    ImagesBucket:
+      Type: AWS::S3::Bucket
+      Properties:
+        BucketName: disaster-alert-images-${self:provider.region}-${self:custom.accountId}
+        VersioningConfiguration:
+          Status: Enabled
+        LifecycleConfiguration:
+          Rules:
+            - Id: DeleteOldVersions
+              Status: Enabled
+              NoncurrentVersionExpirationInDays: 30
+            - Id: DeleteIncompleteMultipartUploads
+              Status: Enabled
+              AbortIncompleteMultipartUpload:
+                DaysAfterInitiation: 7
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: true
+          BlockPublicPolicy: true
+          IgnorePublicAcls: true
+          RestrictPublicBuckets: true
+    SocialMediaCredentialsSecret:
+      Type: AWS::SecretsManager::Secret
+      Properties:
+        Name: disaster-alert/social-media-credentials
+        Description: API credentials for social media platforms
+        SecretString: '{"twitterBearerToken":"","redditClientId":"","redditClientSecret":"","newsApiKey":""}'
+        CloudWatchLogGroup:
+          Type: AWS::Logs::LogGroup
+          Properties:
+            LogGroupName: /aws/lambda/disaster-alert-system
+            RetentionInDays: 30
+        
+        # CloudWatch Events Rules for Scheduled Tasks
+        SocialMediaScrapingRule:
+          Type: AWS::Events::Rule
+          Properties:
+            Name: disaster-alert-social-scraping
+            Description: Trigger social media scraping every 5 minutes
+            ScheduleExpression: rate(5 minutes)
+            State: ENABLED
+            Targets:
+              - Arn: { 'Fn::GetAtt': [ socialMediaScraper, Arn ] }
+                Id: SocialMediaScrapingTarget
+                Input: '{"platform": "all", "maxResults": 100}'
+        
+        QueueProcessingRule:
+          Type: AWS::Events::Rule
+          Properties:
+            Name: disaster-alert-queue-processing
+            Description: Process SQS queues every minute
+            ScheduleExpression: rate(1 minute)
+            State: ENABLED
+            Targets:
+              - Arn: { 'Fn::GetAtt': [ processQueue, Arn ] }
+                Id: QueueProcessingTarget
+                Input: '{}'
+        
+        ScheduledTasksRule:
+          Type: AWS::Events::Rule
+          Properties:
+            Name: disaster-alert-scheduled-tasks
+            Description: Execute scheduled tasks every 10 minutes
+            ScheduleExpression: rate(10 minutes)
+            State: ENABLED
+            Targets:
+              - Arn: { 'Fn::GetAtt': [ scheduledTasks, Arn ] }
+                Id: ScheduledTasksTarget
+                Input: '{"source": "aws.events", "detail-type": "Scheduled Tasks"}'
+        
+        DailyCleanupRule:
+          Type: AWS::Events::Rule
+          Properties:
+            Name: disaster-alert-daily-cleanup
+            Description: Daily cleanup at 2 AM UTC
+            ScheduleExpression: cron(0 2 * * ? *)
+            State: ENABLED
+            Targets:
+              - Arn: { 'Fn::GetAtt': [ scheduledTasks, Arn ] }
+                Id: DailyCleanupTarget
+                Input: '{"source": "aws.events", "detail-type": "Daily Cleanup"}'
+        
+        HourlyMetricsRule:
+          Type: AWS::Events::Rule
+          Properties:
+            Name: disaster-alert-hourly-metrics
+            Description: Collect metrics every hour
+            ScheduleExpression: cron(0 * * * ? *)
+            State: ENABLED
+            Targets:
+              - Arn: { 'Fn::GetAtt': [ scheduledTasks, Arn ] }
+                Id: HourlyMetricsTarget
+                Input: '{"source": "aws.events", "detail-type": "Hourly Metrics"}'
+        
+        # CloudWatch Events Permissions
+        CloudWatchEventsInvokePermission:
+          Type: AWS::Lambda::Permission
+          Properties:
+            FunctionName: { Ref: socialMediaScraper }
+            Action: lambda:InvokeFunction
+            Principal: events.amazonaws.com
+            SourceArn: { 'Fn::GetAtt': [ SocialMediaScrapingRule, Arn ] }
+        
+        CloudWatchEventsInvokePermission2:
+          Type: AWS::Lambda::Permission
+          Properties:
+            FunctionName: { Ref: processQueue }
+            Action: lambda:InvokeFunction
+            Principal: events.amazonaws.com
+            SourceArn: { 'Fn::GetAtt': [ QueueProcessingRule, Arn ] }
+        
+        CloudWatchEventsInvokePermission3:
+          Type: AWS::Lambda::Permission
+          Properties:
+            FunctionName: { Ref: scheduledTasks }
+            Action: lambda:InvokeFunction
+            Principal: events.amazonaws.com
+            SourceArn: { 'Fn::GetAtt': [ ScheduledTasksRule, Arn ] }
+        
+        CloudWatchEventsInvokePermission4:
+          Type: AWS::Lambda::Permission
+          Properties:
+            FunctionName: { Ref: scheduledTasks }
+            Action: lambda:InvokeFunction
+            Principal: events.amazonaws.com
+            SourceArn: { 'Fn::GetAtt': [ DailyCleanupRule, Arn ] }
+        
+        CloudWatchEventsInvokePermission5:
+          Type: AWS::Lambda::Permission
+          Properties:
+            FunctionName: { Ref: scheduledTasks }
+            Action: lambda:InvokeFunction
+            Principal: events.amazonaws.com
+            SourceArn: { 'Fn::GetAtt': [ HourlyMetricsRule, Arn ] }
+  Outputs:
+    ApiGatewayUrl:
+      Description: API Gateway URL
+      Value: { 'Fn::Join': [ '', [ 'https://', { Ref: 'HttpApi' }, '.execute-api.', { Ref: 'AWS::Region' }, '.amazonaws.com' ] ] }
+    EventsTableName:
+      Description: DynamoDB Events Table Name
+      Value: { Ref: EventsTable }
+    AlertsTopicArn:
+      Description: SNS Alerts Topic ARN
+      Value: { Ref: AlertsTopic }
+    SocialMediaQueueUrl:
+      Description: Social Media SQS Queue URL
+      Value: { Ref: SocialMediaQueue }
+    ImagesBucketName:
+      Description: S3 Images Bucket Name
+      Value: { Ref: ImagesBucket }

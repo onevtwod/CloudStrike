@@ -1,0 +1,11 @@
+{
+    "name": "infra",
+    "private": true,
+    "devDependencies": {
+        "serverless": "^4.1.14"
+    },
+    "scripts": {
+        "deploy": "serverless deploy",
+        "remove": "serverless remove"
+    }
+}

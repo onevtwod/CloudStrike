@@ -1,0 +1,64 @@
+name: PR Checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  pr-checks:
+    name: PR Quality Checks
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: ${{ env.NODE_VERSION }}
+        cache: 'npm'
+
+    - name: Install dependencies
+      run: npm ci
+
+    - name: Run linting
+      run: |
+        npm --workspace=web run lint
+        # Add more linting as needed
+
+    - name: Run type checking
+      run: |
+        npm --workspace=@shared/utils run build
+        npm --workspace=@services/processing run build
+        npm --workspace=web run build
+
+    - name: Run tests
+      run: |
+        npm --workspace=@shared/utils run test
+        npm --workspace=@services/processing run test
+        npm --workspace=web run test
+
+    - name: Check test coverage
+      run: |
+        npm --workspace=@shared/utils run test:coverage
+        npm --workspace=@services/processing run test:coverage
+        npm --workspace=web run test:coverage
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v4
+      with:
+        files: ./packages/shared/coverage/lcov.info,./services/processing/coverage/lcov.info,./apps/web/coverage/lcov.info
+        fail_ci_if_error: false
+
+    - name: Comment PR with coverage
+      uses: romeovs/lcov-reporter-action@v0.3.1
+      with:
+        lcov-file: ./coverage/lcov.info
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        delete-old-comments: true
