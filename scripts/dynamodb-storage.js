@@ -246,7 +246,10 @@ class DynamoDBStorage {
 
             const command = new ScanCommand({
                 TableName: this.tables.events,
-                FilterExpression: 'timestamp > :cutoff',
+                FilterExpression: '#ts > :cutoff',
+                ExpressionAttributeNames: {
+                    '#ts': 'timestamp'
+                },
                 ExpressionAttributeValues: {
                     ':cutoff': cutoffTime
                 },
