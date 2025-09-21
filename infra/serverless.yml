@@ -7,6 +7,7 @@ provider:
   environment:
     # DynamoDB
     EVENTS_TABLE: ${self:resources.Resources.EventsTable.Properties.TableName}
+    SUBSCRIBERS_TABLE: ${self:resources.Resources.SubscribersTable.Properties.TableName}
     
     # SNS
     ALERTS_TOPIC_ARN: { Ref: AlertsTopic }
@@ -97,16 +98,16 @@ provider:
             - logs:CreateLogStream
             - logs:PutLogEvents
           Resource: '*'
-            - Effect: Allow
-              Action:
-                - cloudwatch:PutMetricData
-              Resource: '*'
-            - Effect: Allow
-              Action:
-                - events:PutEvents
-                - events:DescribeRule
-                - events:ListRules
-              Resource: '*'
+        - Effect: Allow
+          Action:
+            - cloudwatch:PutMetricData
+          Resource: '*'
+        - Effect: Allow
+          Action:
+            - events:PutEvents
+            - events:DescribeRule
+            - events:ListRules
+          Resource: '*'
 package:
   individually: true
 functions:
@@ -201,6 +202,33 @@ resources:
               - AttributeName: author
                 KeyType: HASH
               - AttributeName: text
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+        TimeToLiveSpecification:
+          AttributeName: ttl
+          Enabled: true
+    SubscribersTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: disaster-subscribers
+        BillingMode: PAY_PER_REQUEST
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+          - AttributeName: location
+            AttributeType: S
+          - AttributeName: subscribedAt
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        GlobalSecondaryIndexes:
+          - IndexName: location-subscribed-index
+            KeySchema:
+              - AttributeName: location
+                KeyType: HASH
+              - AttributeName: subscribedAt
                 KeyType: RANGE
             Projection:
               ProjectionType: ALL

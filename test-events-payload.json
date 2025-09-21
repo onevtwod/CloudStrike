@@ -1,0 +1,8 @@
+{
+  "requestContext": {
+    "http": {
+      "path": "/prod/events",
+      "method": "GET"
+    }
+  }
+}

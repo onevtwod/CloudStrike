@@ -1,0 +1,17 @@
+{
+  "version": "2.0",
+  "routeKey": "POST /subscribe",
+  "rawPath": "/subscribe",
+  "headers": {
+    "host": "t5llkka6x3.execute-api.us-east-1.amazonaws.com",
+    "content-type": "application/json"
+  },
+  "requestContext": {
+    "http": {
+      "method": "POST",
+      "path": "/subscribe"
+    }
+  },
+  "body": "{\"kind\":\"email\",\"value\":\"fixed-bug-test@example.com\"}",
+  "isBase64Encoded": false
+}

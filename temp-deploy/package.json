@@ -1,0 +1,11 @@
+{
+  "name": "cloudstrike-api",
+  "version": "1.0.0",
+  "description": "CloudStrike API with subscribe functionality",
+  "main": "index.js",
+  "dependencies": {
+    "@aws-sdk/client-sns": "^3.x",
+    "@aws-sdk/client-dynamodb": "^3.x", 
+    "@aws-sdk/lib-dynamodb": "^3.x"
+  }
+}

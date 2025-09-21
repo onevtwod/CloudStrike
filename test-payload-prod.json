@@ -1,0 +1,9 @@
+{
+  "requestContext": {
+    "http": {
+      "path": "/prod/subscribe",
+      "method": "POST"
+    }
+  },
+  "body": "{\"kind\":\"email\",\"value\":\"path-test@example.com\"}"
+}
