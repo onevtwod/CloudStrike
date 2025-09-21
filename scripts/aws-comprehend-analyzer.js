@@ -4,13 +4,31 @@ const { ComprehendClient, DetectEntitiesCommand, DetectSentimentCommand, DetectK
 
 class AWSComprehendAnalyzer {
     constructor() {
-        this.comprehend = new ComprehendClient({
-            region: process.env.AWS_REGION || 'us-east-1',
-            credentials: {
-                accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'dummy',
-                secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'dummy'
+        // Use AWS SDK default credential chain (includes OS-configured credentials)
+        const config = {
+            region: process.env.AWS_REGION || 'us-east-1'
+        };
+
+        // Only set explicit credentials if environment variables are provided
+        if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+            config.credentials = {
+                accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+                secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+            };
+
+            // Add session token if present (for temporary credentials)
+            if (process.env.AWS_SESSION_TOKEN) {
+                config.credentials.sessionToken = process.env.AWS_SESSION_TOKEN;
             }
-        });
+        }
+        // If no explicit credentials, AWS SDK will use default credential chain
+        // which includes: environment variables, AWS credentials file, IAM roles, etc.
+
+        this.comprehend = new ComprehendClient(config);
+
+        // Rate limiting for AWS Comprehend
+        this.lastRequestTime = 0;
+        this.requestDelay = 150; // 150ms between requests (6.67 requests per second)
 
         // Disaster-related entity types to look for
         this.disasterEntityTypes = [
@@ -62,6 +80,8 @@ class AWSComprehendAnalyzer {
 
         } catch (error) {
             console.error('❌ Error analyzing post with Comprehend:', error.message);
+            console.error('   📝 Post text length:', post.text?.length || 0);
+            console.error('   🔍 Error details:', error.code || 'Unknown error');
 
             // Fallback to basic analysis
             return {
@@ -69,8 +89,40 @@ class AWSComprehendAnalyzer {
                 severity: this.calculateBasicSeverity(post.text),
                 isDisasterRelated: this.containsDisasterKeywords(post.text),
                 confidence: 0.5,
-                analyzedAt: new Date()
+                analyzedAt: new Date(),
+                error: error.message
             };
+        }
+    }
+
+    async rateLimitRequest() {
+        const now = Date.now();
+        const timeSinceLastRequest = now - this.lastRequestTime;
+
+        if (timeSinceLastRequest < this.requestDelay) {
+            const delay = this.requestDelay - timeSinceLastRequest;
+            await new Promise(resolve => setTimeout(resolve, delay));
+        }
+
+        this.lastRequestTime = Date.now();
+    }
+
+    async retryRequest(requestFn, maxRetries = 3) {
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                await this.rateLimitRequest();
+                return await requestFn();
+            } catch (error) {
+                if (error.name === 'ThrottlingException' || error.message.includes('throttl')) {
+                    if (attempt === maxRetries) {
+                        throw error;
+                    }
+                    console.log(`   ⏳ AWS Comprehend rate limited, retrying in ${attempt * 2}s... (attempt ${attempt}/${maxRetries})`);
+                    await new Promise(resolve => setTimeout(resolve, attempt * 2000));
+                } else {
+                    throw error;
+                }
+            }
         }
     }
 
@@ -79,7 +131,9 @@ class AWSComprehendAnalyzer {
         const malayWords = ['banjir', 'ribut', 'gempa', 'kebakaran', 'kecemasan', 'bencana', 'malaysia'];
         const hasMalayWords = malayWords.some(word => text.toLowerCase().includes(word));
 
-        return hasMalayWords ? 'ms' : 'en';
+        // AWS Comprehend doesn't support Malay ('ms'), so use English for all text
+        // This ensures compatibility while still detecting Malay keywords for context
+        return 'en';
     }
 
     async detectEntities(text, languageCode) {
@@ -89,7 +143,7 @@ class AWSComprehendAnalyzer {
                 LanguageCode: languageCode
             });
 
-            const response = await this.comprehend.send(command);
+            const response = await this.retryRequest(() => this.comprehend.send(command));
             return response.Entities || [];
 
         } catch (error) {
@@ -105,7 +159,7 @@ class AWSComprehendAnalyzer {
                 LanguageCode: languageCode
             });
 
-            const response = await this.comprehend.send(command);
+            const response = await this.retryRequest(() => this.comprehend.send(command));
             return {
                 sentiment: response.Sentiment,
                 confidence: response.SentimentScore
@@ -127,7 +181,7 @@ class AWSComprehendAnalyzer {
                 LanguageCode: languageCode
             });
 
-            const response = await this.comprehend.send(command);
+            const response = await this.retryRequest(() => this.comprehend.send(command));
             return response.KeyPhrases || [];
 
         } catch (error) {

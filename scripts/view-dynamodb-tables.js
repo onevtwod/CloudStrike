@@ -9,20 +9,9 @@ const { DynamoDBDocumentClient, ScanCommand, QueryCommand } = require('@aws-sdk/
 
 class DynamoDBTableViewer {
     constructor() {
-        // Build credentials object
-        const credentials = {
-            accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'dummy',
-            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'dummy'
-        };
-
-        // Add session token if present (for temporary credentials)
-        if (process.env.AWS_SESSION_TOKEN) {
-            credentials.sessionToken = process.env.AWS_SESSION_TOKEN;
-        }
-
+        // Use AWS SDK default credential chain (same as test files)
         this.client = new DynamoDBClient({
-            region: process.env.AWS_REGION || 'us-east-1',
-            credentials: credentials
+            region: process.env.AWS_REGION || 'us-east-1'
         });
 
         this.docClient = DynamoDBDocumentClient.from(this.client);

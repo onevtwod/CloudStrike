@@ -4,13 +4,26 @@ const { SNSClient, PublishCommand } = require('@aws-sdk/client-sns');
 
 class SNSNotifications {
     constructor() {
-        this.sns = new SNSClient({
-            region: process.env.AWS_REGION || 'us-east-1',
-            credentials: {
-                accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'dummy',
-                secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'dummy'
+        // Use AWS SDK default credential chain (includes OS-configured credentials)
+        const config = {
+            region: process.env.AWS_REGION || 'us-east-1'
+        };
+
+        // Only set explicit credentials if environment variables are provided
+        if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+            config.credentials = {
+                accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+                secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+            };
+
+            // Add session token if present (for temporary credentials)
+            if (process.env.AWS_SESSION_TOKEN) {
+                config.credentials.sessionToken = process.env.AWS_SESSION_TOKEN;
             }
-        });
+        }
+        // If no explicit credentials, AWS SDK will use default credential chain
+
+        this.sns = new SNSClient(config);
 
         this.topics = {
             disasterAlerts: process.env.SNS_DISASTER_ALERTS_TOPIC || 'disaster-alerts',

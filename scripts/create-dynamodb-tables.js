@@ -1,28 +1,29 @@
 #!/usr/bin/env node
 
-// Load environment variables from .env file
-const path = require('path');
-require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+// Use OS-configured environment variables (no .env file needed)
 
 const { DynamoDBClient, CreateTableCommand, DescribeTableCommand } = require('@aws-sdk/client-dynamodb');
 
 class DynamoDBTableCreator {
     constructor() {
-        // Build credentials object
-        const credentials = {
-            accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'dummy',
-            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'dummy'
+        // Use AWS SDK default credential chain (same as other files)
+        const config = {
+            region: process.env.AWS_REGION || 'us-east-1'
         };
 
-        // Add session token if present (for temporary credentials)
-        if (process.env.AWS_SESSION_TOKEN) {
-            credentials.sessionToken = process.env.AWS_SESSION_TOKEN;
+        // Only set explicit credentials if environment variables are provided
+        if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+            config.credentials = {
+                accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+                secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+            };
+
+            if (process.env.AWS_SESSION_TOKEN) {
+                config.credentials.sessionToken = process.env.AWS_SESSION_TOKEN;
+            }
         }
 
-        this.client = new DynamoDBClient({
-            region: process.env.AWS_REGION || 'us-east-1',
-            credentials: credentials
-        });
+        this.client = new DynamoDBClient(config);
 
         this.tables = {
             rawPosts: {
@@ -78,7 +79,7 @@ class DynamoDBTableCreator {
                     { AttributeName: 'id', AttributeType: 'S' },
                     { AttributeName: 'timestamp', AttributeType: 'S' },
                     { AttributeName: 'location', AttributeType: 'S' },
-                    { AttributeName: 'isDisasterRelated', AttributeType: 'BOOL' }
+                    { AttributeName: 'isDisasterRelated', AttributeType: 'S' }
                 ],
                 GlobalSecondaryIndexes: [
                     {

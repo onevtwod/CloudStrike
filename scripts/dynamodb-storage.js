@@ -5,21 +5,27 @@ const { DynamoDBDocumentClient, PutCommand, QueryCommand, ScanCommand, UpdateCom
 
 class DynamoDBStorage {
     constructor() {
-        // Build credentials object
-        const credentials = {
-            accessKeyId: process.env.AWS_ACCESS_KEY_ID || 'dummy',
-            secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY || 'dummy'
+        // Use AWS SDK default credential chain (includes OS-configured credentials)
+        const config = {
+            region: process.env.AWS_REGION || 'us-east-1'
         };
 
-        // Add session token if present (for temporary credentials)
-        if (process.env.AWS_SESSION_TOKEN) {
-            credentials.sessionToken = process.env.AWS_SESSION_TOKEN;
-        }
+        // Only set explicit credentials if environment variables are provided
+        if (process.env.AWS_ACCESS_KEY_ID && process.env.AWS_SECRET_ACCESS_KEY) {
+            config.credentials = {
+                accessKeyId: process.env.AWS_ACCESS_KEY_ID,
+                secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY
+            };
 
-        this.client = new DynamoDBClient({
-            region: process.env.AWS_REGION || 'ap-southeast-1',
-            credentials: credentials
-        });
+            // Add session token if present (for temporary credentials)
+            if (process.env.AWS_SESSION_TOKEN) {
+                config.credentials.sessionToken = process.env.AWS_SESSION_TOKEN;
+            }
+        }
+        // If no explicit credentials, AWS SDK will use default credential chain
+        // which includes: environment variables, AWS credentials file, IAM roles, etc.
+
+        this.client = new DynamoDBClient(config);
 
         this.docClient = DynamoDBDocumentClient.from(this.client);
 
@@ -43,7 +49,7 @@ class DynamoDBStorage {
                 author: post.author,
                 source: post.source,
                 timestamp: post.timestamp.toISOString(),
-                location: post.location || null,
+                location: post.location || 'unknown', // Cannot be null for location-timestamp-index
                 images: post.images || [],
                 url: post.url || null,
                 rawData: post.rawData || {},
@@ -76,12 +82,12 @@ class DynamoDBStorage {
                 author: analyzedPost.author,
                 source: analyzedPost.source,
                 timestamp: analyzedPost.timestamp.toISOString(),
-                location: analyzedPost.location || null,
+                location: analyzedPost.location || 'unknown', // Cannot be null for location-timestamp-index
                 images: analyzedPost.images || [],
                 imageLocation: analyzedPost.imageLocation || null,
                 severity: analyzedPost.severity,
                 confidence: analyzedPost.confidence,
-                isDisasterRelated: analyzedPost.isDisasterRelated,
+                isDisasterRelated: analyzedPost.isDisasterRelated ? 'true' : 'false', // Convert boolean to string for disaster-timestamp-index
                 entities: analyzedPost.entities || [],
                 sentiment: analyzedPost.sentiment || {},
                 keyPhrases: analyzedPost.keyPhrases || [],

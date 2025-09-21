@@ -34,6 +34,7 @@
         "sns-subscriptions": "cd scripts && npm run sns-subscriptions",
         "notification-destinations": "cd scripts && npm run notification-destinations",
         "comprehensive-system": "cd scripts && node comprehensive-disaster-system.js",
+        "main": "cd scripts && node main.js",
         "enhanced-comprehensive": "cd scripts && npm run enhanced-comprehensive"
     }
 }

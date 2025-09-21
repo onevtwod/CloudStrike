@@ -80,10 +80,10 @@ function fixClassNames(filePath, correctClass, correctMethod) {
 
 function main() {
     console.log('🔧 Fixing class names in test files...\n');
-    
+
     let fixed = 0;
     let total = testFiles.length;
-    
+
     for (const testFile of testFiles) {
         const filePath = path.join(__dirname, testFile.file);
         if (fs.existsSync(filePath)) {
@@ -94,9 +94,9 @@ function main() {
             console.log(`⚠️  File not found: ${testFile.file}`);
         }
     }
-    
+
     console.log(`\n📊 Summary: Fixed ${fixed}/${total} files`);
-    
+
     if (fixed === total) {
         console.log('🎉 All test files fixed successfully!');
     } else {

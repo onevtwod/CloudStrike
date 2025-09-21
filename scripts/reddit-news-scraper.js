@@ -122,20 +122,18 @@ class RedditNewsScraper {
         try {
             console.log('🔴 Scraping Reddit...');
 
-            // Reddit subreddits for Malaysia and disasters
+            // Reddit subreddits for Malaysia and disasters (verified to exist)
             const subreddits = [
                 'malaysia',
                 'malaysians',
-                'kl',
                 'kualalumpur',
                 'penang',
-                'johor',
                 'sabah',
                 'sarawak',
                 'emergency',
-                'disaster',
                 'weather',
-                'flood'
+                'malaysiaflood',  // More specific flood subreddit
+                'malaysiaweather' // More specific weather subreddit
             ];
 
             const posts = [];
@@ -173,15 +171,22 @@ class RedditNewsScraper {
                     await new Promise(resolve => setTimeout(resolve, 1000));
 
                 } catch (error) {
-                    console.error(`   ❌ Error scraping r/${subreddit}:`, error.message);
+                    if (error.response?.status === 404) {
+                        console.log(`   ⚠️  Subreddit r/${subreddit} not found or private - skipping`);
+                    } else {
+                        console.error(`   ❌ Error scraping r/${subreddit}:`, error.message);
+                    }
                 }
             }
 
             await this.processPosts(posts);
             console.log(`✅ Reddit scraping completed: ${posts.length} posts found`);
+            
+            return posts; // Return the posts array
 
         } catch (error) {
             console.error('❌ Reddit scraping failed:', error.message);
+            return []; // Return empty array on error
         }
     }
 

@@ -28,9 +28,13 @@
         "sns-subscriptions": "node sns-subscription-manager.js",
         "notification-destinations": "node notification-destinations-example.js",
         "enhanced-comprehensive": "node enhanced-comprehensive-system.js",
+        "main": "node main.js",
+        "setup-web": "node setup-web-env.js",
+        "start-full": "node start-full-system.js",
         "test": "node test-all-components.js",
         "test-aws": "node test-aws-credentials.js",
         "test-comprehend": "node test-comprehend-analysis.js",
+        "test-bedrock": "node test-bedrock-translation.js",
         "test-rekognition": "node test-rekognition-image.js",
         "test-sns": "node test-sns-notifications.js",
         "test-sqs": "node test-sqs-operations.js",
@@ -40,6 +44,7 @@
         "test-all": "node test-all-components.js"
     },
     "dependencies": {
+        "@aws-sdk/client-bedrock-runtime": "^3.893.0",
         "@aws-sdk/client-cloudwatch": "^3.673.0",
         "@aws-sdk/client-cloudwatch-logs": "^3.673.0",
         "@aws-sdk/client-comprehend": "^3.673.0",
