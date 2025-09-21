@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const AWSComprehendAnalyzer = require('./aws-comprehend-analyzer');
+const AWSBedrockAnalyzer = require('./aws-bedrock-analyzer');
 const ImageLocationAnalyzer = require('./image-location-analyzer');
 const DisasterVerificationSystem = require('./disaster-verification-system');
 const { RedditNewsScraper } = require('./reddit-news-scraper');
@@ -11,7 +11,7 @@ const axios = require('axios');
 
 class ComprehensiveDisasterSystem {
     constructor() {
-        this.comprehendAnalyzer = new AWSComprehendAnalyzer();
+        this.bedrockAnalyzer = new AWSBedrockAnalyzer();
         this.imageAnalyzer = new ImageLocationAnalyzer();
         this.verificationSystem = new DisasterVerificationSystem();
         this.redditScraper = new RedditNewsScraper();
@@ -40,7 +40,7 @@ class ComprehensiveDisasterSystem {
         };
 
         console.log('🚀 Comprehensive Disaster Detection System Initialized');
-        console.log('🔍 Features: Real Reddit Data + AWS Comprehend + Image Analysis + Weather API Cross-check + Verification + SNS Notifications');
+        console.log('🔍 Features: Real Reddit Data + AWS Bedrock + Image Analysis + Weather API Cross-check + Verification + SNS Notifications');
     }
 
     async start() {
@@ -267,6 +267,13 @@ ${text}`;
                 return;
             }
 
+            // Check for duplicates before processing
+            const isDuplicate = await this.checkForDuplicate(post.author || 'unknown', post.text);
+            if (isDuplicate) {
+                console.log(`\n⚠️  Skipping duplicate post from ${post.author}: "${post.text.substring(0, 50)}..."`);
+                return;
+            }
+
             // Check text length for AWS Comprehend (max 5KB)
             const maxLength = 5000;
             if (post.text.length > maxLength) {
@@ -303,25 +310,25 @@ ${text}`;
                 isTranslated = true;
             }
 
-            // Step 2: Analyze with AWS Comprehend
-            console.log('   🤖 Analyzing with AWS Comprehend...');
-            let comprehendResult;
+            // Step 2: Analyze with AWS Bedrock
+            console.log('   🤖 Analyzing with AWS Bedrock...');
+            let bedrockResult;
             try {
                 // Create a modified post object with translated text for analysis
                 const postForAnalysis = { ...post, text: textToAnalyze };
-                comprehendResult = await this.comprehendAnalyzer.analyzePost(postForAnalysis);
+                bedrockResult = await this.bedrockAnalyzer.analyzePost(postForAnalysis);
 
                 // Add translation info to the result
                 if (isTranslated) {
-                    comprehendResult.originalText = post.text;
-                    comprehendResult.translatedText = textToAnalyze;
-                    comprehendResult.language = detectedLanguage;
+                    bedrockResult.originalText = post.text;
+                    bedrockResult.translatedText = textToAnalyze;
+                    bedrockResult.language = detectedLanguage;
                 }
-            } catch (comprehendError) {
-                console.error('   ❌ AWS Comprehend analysis failed:', comprehendError.message);
+            } catch (bedrockError) {
+                console.error('   ❌ AWS Bedrock analysis failed:', bedrockError.message);
                 console.error('   📝 Post text length:', post.text?.length || 0);
                 // Use fallback analysis
-                comprehendResult = {
+                bedrockResult = {
                     isDisasterRelated: this.containsDisasterKeywords(textToAnalyze),
                     confidence: 0.5,
                     severity: 0.3,
@@ -331,27 +338,27 @@ ${text}`;
                     keyPhrases: []
                 };
                 if (isTranslated) {
-                    comprehendResult.originalText = post.text;
-                    comprehendResult.translatedText = textToAnalyze;
-                    comprehendResult.language = detectedLanguage;
+                    bedrockResult.originalText = post.text;
+                    bedrockResult.translatedText = textToAnalyze;
+                    bedrockResult.language = detectedLanguage;
                 }
             }
 
-            if (!comprehendResult.isDisasterRelated) {
+            if (!bedrockResult.isDisasterRelated) {
                 console.log('   ❌ Post not disaster-related, skipping');
                 return;
             }
 
             this.analysisStats.analyzedPosts++;
-            console.log(`   ✅ Disaster-related post detected (confidence: ${comprehendResult.confidence})`);
-            console.log(`   📍 Text location: ${comprehendResult.location || 'Not detected'}`);
-            console.log(`   ⚠️  Severity: ${comprehendResult.severity}`);
+            console.log(`   ✅ Disaster-related post detected (confidence: ${bedrockResult.confidence})`);
+            console.log(`   📍 Text location: ${bedrockResult.location || 'Not detected'}`);
+            console.log(`   ⚠️  Severity: ${bedrockResult.severity}`);
 
             // Store analyzed post in DynamoDB
             try {
                 const analyzedPost = {
                     ...post,
-                    ...comprehendResult,
+                    ...bedrockResult,
                     rawPostId: post.id || `raw_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
                 };
                 await this.storage.storeAnalyzedPost(analyzedPost);
@@ -373,7 +380,7 @@ ${text}`;
             }
 
             // Step 3: Combine location information
-            const finalLocation = comprehendResult.location || imageLocation || post.location;
+            const finalLocation = bedrockResult.location || imageLocation || post.location;
             if (finalLocation) {
                 this.analysisStats.locationDetected++;
                 console.log(`   📍 Final location: ${finalLocation}`);
@@ -382,7 +389,7 @@ ${text}`;
             // Step 4: Cross-check with meteorological data
             console.log('   🌦️  Cross-checking with meteorological data...');
             let meteorologicalData = null;
-            let weatherAdjustedSeverity = comprehendResult.severity;
+            let weatherAdjustedSeverity = bedrockResult.severity;
 
             try {
                 meteorologicalData = await this.weatherService.getMeteorologicalData(finalLocation);
@@ -393,7 +400,7 @@ ${text}`;
                 );
 
                 this.analysisStats.weatherCrossChecked++;
-                console.log(`   🌦️  Weather cross-check completed - Severity: ${comprehendResult.severity} → ${weatherAdjustedSeverity}`);
+                console.log(`   🌦️  Weather cross-check completed - Severity: ${bedrockResult.severity} → ${weatherAdjustedSeverity}`);
 
                 // Log meteorological findings
                 if (meteorologicalData.warnings.length > 0) {
@@ -416,11 +423,11 @@ ${text}`;
                 source: post.source,
                 location: finalLocation,
                 severity: weatherAdjustedSeverity, // Use weather-adjusted severity
-                confidence: comprehendResult.confidence,
+                confidence: bedrockResult.confidence,
                 meteorologicalData: meteorologicalData, // Include weather data
-                entities: comprehendResult.entities,
-                sentiment: comprehendResult.sentiment,
-                keyPhrases: comprehendResult.keyPhrases,
+                entities: bedrockResult.entities,
+                sentiment: bedrockResult.sentiment,
+                keyPhrases: bedrockResult.keyPhrases,
                 images: post.images,
                 imageLocation: imageLocation,
                 timestamp: post.timestamp,
@@ -780,6 +787,26 @@ ${text}`;
                 systemStatus: 0,
                 byType: { email: 0, sms: 0, both: 0 }
             };
+        }
+    }
+
+    async checkForDuplicate(author, text) {
+        try {
+            // Check if we've seen this exact author + text combination recently
+            const recentTime = new Date(Date.now() - 24 * 60 * 60 * 1000); // Last 24 hours
+
+            // Look through recent events for duplicates
+            const recentEvents = this.events.filter(event =>
+                event.timestamp && event.timestamp > recentTime &&
+                event.author === author &&
+                event.text === text
+            );
+
+            return recentEvents.length > 0;
+
+        } catch (error) {
+            console.error('❌ Error checking for duplicates:', error.message);
+            return false; // If error, don't skip the post
         }
     }
 

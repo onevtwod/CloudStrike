@@ -403,6 +403,15 @@ class DynamoDBStorage {
     // Store subscriber
     async storeSubscriber(subscriber) {
         try {
+            // Check for existing subscriber with same email or phone
+            const existingSubscriber = await this.findExistingSubscriber(subscriber.email, subscriber.phone);
+
+            if (existingSubscriber) {
+                // Update existing subscriber instead of creating duplicate
+                console.log(`   🔄 Updating existing subscriber: ${existingSubscriber.id}`);
+                return await this.updateSubscriber(existingSubscriber.id, subscriber);
+            }
+
             const item = {
                 id: subscriber.id || `sub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                 email: subscriber.email || null,
@@ -438,6 +447,78 @@ class DynamoDBStorage {
             } else {
                 console.error('❌ Error storing subscriber:', error.message);
             }
+            throw error;
+        }
+    }
+
+    // Find existing subscriber by email or phone
+    async findExistingSubscriber(email, phone) {
+        try {
+            // Scan for existing subscribers with matching email or phone
+            const scanParams = {
+                TableName: this.tables.subscribers,
+                FilterExpression: '#active = :active AND (#email = :email OR #phone = :phone)',
+                ExpressionAttributeNames: {
+                    '#active': 'active',
+                    '#email': 'email',
+                    '#phone': 'phone'
+                },
+                ExpressionAttributeValues: {
+                    ':active': true,
+                    ':email': email || null,
+                    ':phone': phone || null
+                }
+            };
+
+            const result = await this.docClient.send(new ScanCommand(scanParams));
+
+            if (result.Items && result.Items.length > 0) {
+                return result.Items[0]; // Return first match
+            }
+
+            return null;
+        } catch (error) {
+            console.error('❌ Error finding existing subscriber:', error.message);
+            return null;
+        }
+    }
+
+    // Update existing subscriber
+    async updateSubscriber(subscriberId, newData) {
+        try {
+            const updateParams = {
+                TableName: this.tables.subscribers,
+                Key: { id: subscriberId },
+                UpdateExpression: 'SET #type = :type, preferences = :preferences, #location = :location, active = :active, subscribedAt = :subscribedAt',
+                ExpressionAttributeNames: {
+                    '#type': 'type',
+                    '#location': 'location'
+                },
+                ExpressionAttributeValues: {
+                    ':type': newData.type || 'email',
+                    ':preferences': newData.preferences || {
+                        disasterAlerts: true,
+                        emergencyAlerts: true,
+                        verifications: true,
+                        systemStatus: false
+                    },
+                    ':location': newData.location || 'unknown',
+                    ':active': newData.active !== false,
+                    ':subscribedAt': new Date().toISOString()
+                }
+            };
+
+            await this.docClient.send(new UpdateCommand(updateParams));
+            console.log(`   ✅ Subscriber updated: ${subscriberId}`);
+
+            // Return updated item
+            return {
+                id: subscriberId,
+                ...newData,
+                subscribedAt: new Date().toISOString()
+            };
+        } catch (error) {
+            console.error('❌ Error updating subscriber:', error.message);
             throw error;
         }
     }

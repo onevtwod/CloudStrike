@@ -1,10 +1,10 @@
-# 🤖 Amazon Bedrock Translation Setup Guide
+# 🤖 Amazon Bedrock Analysis Setup Guide
 
-This guide explains how to set up Amazon Bedrock for Malay-to-English translation in the disaster detection system.
+This guide explains how to set up Amazon Bedrock for disaster-related post analysis in the disaster detection system.
 
 ## 🎯 Overview
 
-The system now uses **Amazon Bedrock** with **Amazon Titan Text** for translating Malay Reddit posts to English, replacing Google Cloud Translate API.
+The system now uses **Amazon Bedrock** with **Amazon Titan Text** for comprehensive analysis of disaster-related posts, replacing Amazon Comprehend for entity detection, sentiment analysis, and key phrase extraction.
 
 ## 🔧 Prerequisites
 
@@ -38,7 +38,17 @@ export AWS_REGION=us-east-1  # or us-west-2
 
 ### **Step 2: Configure IAM Permissions**
 
-Create or update IAM policy for Bedrock access:
+The system automatically configures IAM permissions for Bedrock access through the serverless.yml configuration. The Lambda functions have the following permissions:
+
+```yaml
+- Effect: Allow
+  Action:
+    - bedrock:InvokeModel
+  Resource:
+    - 'arn:aws:bedrock:${self:provider.region}::foundation-model/amazon.titan-text-express-v1'
+```
+
+For manual setup, create or update IAM policy for Bedrock access:
 
 ```json
 {
@@ -59,16 +69,27 @@ Create or update IAM policy for Bedrock access:
 
 ### **Step 3: Install Dependencies**
 
+Dependencies are already configured in the package.json files:
+
 ```bash
+# For scripts (already installed)
 cd scripts
+npm install @aws-sdk/client-bedrock-runtime
+
+# For processing service
+cd services/processing
 npm install @aws-sdk/client-bedrock-runtime
 ```
 
 ### **Step 4: Test Bedrock Integration**
 
 ```bash
-# Test Bedrock translation functionality
+# Test Bedrock analysis functionality
 npm run test-bedrock
+
+# Test the new Bedrock analyzer
+cd scripts
+node aws-bedrock-analyzer.js
 ```
 
 ### **Step 5: Run the Full System**
@@ -97,12 +118,14 @@ node main.js
 When working correctly, you should see:
 
 ```
-🤖 Amazon Bedrock translation configured
+🤖 Amazon Bedrock analysis configured
 🔍 Processing reddit post: "Banjir berlaku di Kuala Lumpur..."
-   🇲🇾 Malay text detected, translating to English...
-   🤖 Translating from ms to en using Amazon Bedrock (Titan Text)...
-   ✅ Bedrock translation successful: "Flood occurred in Kuala Lumpur today. Roads are closed."
-   🤖 Analyzing with AWS Comprehend...
+   🤖 Analyzing with AWS Bedrock (Titan Text)...
+   ✅ Bedrock analysis successful: 
+   - Entities: [{"text":"Kuala Lumpur","type":"LOCATION","confidence":0.9}]
+   - Sentiment: {"sentiment":"NEGATIVE","confidence":0.8}
+   - Key Phrases: [{"text":"flood occurred","confidence":0.9}]
+   - Disaster Keywords: ["flood","banjir"]
 ```
 
 ## 🔍 Troubleshooting
@@ -118,14 +141,14 @@ When working correctly, you should see:
 
 #### 2. **"Access denied"**
 ```
-❌ Amazon Bedrock translation failed: AccessDeniedException
+❌ Amazon Bedrock analysis failed: AccessDeniedException
 💡 Access denied. Ensure Bedrock permissions for Amazon Titan model are configured
 ```
 **Solution:** Check IAM permissions and model access
 
 #### 3. **"Model access not granted"**
 ```
-❌ Amazon Bedrock translation failed: ValidationException
+❌ Amazon Bedrock analysis failed: ValidationException
 ```
 **Solution:** Request Amazon Titan Text G1 Express model access in Bedrock console
 
@@ -161,20 +184,29 @@ If Bedrock translation fails, the system will:
 ## 📋 System Architecture
 
 ```
-Reddit Post (Malay) → Language Detection → Bedrock Translation → AWS Comprehend → Event Creation
+Social Media Post → Language Detection → Bedrock Analysis → Event Creation
                                         ↓
                                    Weather Cross-check → Final Event
 ```
 
+**Bedrock Analysis includes:**
+- Entity Detection (PERSON, LOCATION, ORGANIZATION, EVENT)
+- Sentiment Analysis (POSITIVE/NEGATIVE/NEUTRAL)
+- Key Phrase Extraction
+- Disaster Keyword Detection
+- Confidence Scoring
+
 ## 🎯 Benefits of Bedrock Integration
 
-1. **Better Translation Quality**: Amazon Titan Text provides reliable translation with cost efficiency
-2. **AWS Native**: No external API dependencies
-3. **Cost Effective**: More affordable than other models (~70% cost reduction compared to Nova Pro)
-4. **Scalable**: Handles high-volume translation requests
-5. **Context Aware**: Better understanding of disaster-related terminology
-6. **Fast Performance**: Optimized for speed and accuracy
-7. **Wide Availability**: Titan models are available in more AWS regions
+1. **Comprehensive Analysis**: Single API call provides entity detection, sentiment analysis, and key phrase extraction
+2. **Better Accuracy**: Amazon Titan Text provides more accurate analysis than traditional NLP services
+3. **AWS Native**: No external API dependencies, fully integrated with AWS ecosystem
+4. **Cost Effective**: More affordable than using multiple separate services
+5. **Scalable**: Handles high-volume analysis requests with built-in rate limiting
+6. **Context Aware**: Better understanding of disaster-related terminology and context
+7. **Fast Performance**: Optimized for speed and accuracy
+8. **Wide Availability**: Titan models are available in more AWS regions
+9. **Unified Interface**: Single service replaces multiple Comprehend operations
 
 ## 📞 Support
 
@@ -188,4 +220,4 @@ If you encounter issues:
 
 ---
 
-**🎉 Your disaster detection system now uses Amazon Bedrock with Titan Text for high-quality Malay-to-English translation!**
+**🎉 Your disaster detection system now uses Amazon Bedrock with Titan Text for comprehensive disaster-related post analysis!**

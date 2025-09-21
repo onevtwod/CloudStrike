@@ -55,10 +55,9 @@ provider:
             - { Ref: AlertsTopic }
         - Effect: Allow
           Action:
-            - comprehend:DetectEntities
-            - comprehend:DetectSentiment
-            - comprehend:DetectDominantLanguage
-          Resource: '*'
+            - bedrock:InvokeModel
+          Resource:
+            - 'arn:aws:bedrock:${self:provider.region}::foundation-model/us.meta.llama4-maverick-17b-instruct-v1:0'
         - Effect: Allow
           Action:
             - rekognition:DetectLabels
@@ -183,6 +182,10 @@ resources:
             AttributeType: S
           - AttributeName: verified
             AttributeType: N
+          - AttributeName: author
+            AttributeType: S
+          - AttributeName: text
+            AttributeType: S
         KeySchema:
           - AttributeName: id
             KeyType: HASH
@@ -191,6 +194,14 @@ resources:
             KeySchema:
               - AttributeName: verified
                 KeyType: HASH
+            Projection:
+              ProjectionType: ALL
+          - IndexName: AuthorTextIndex
+            KeySchema:
+              - AttributeName: author
+                KeyType: HASH
+              - AttributeName: text
+                KeyType: RANGE
             Projection:
               ProjectionType: ALL
         TimeToLiveSpecification:

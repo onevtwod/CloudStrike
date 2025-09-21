@@ -1,14 +1,14 @@
 import { handler } from '../handlers/processTweet';
-import { ComprehendClient, DetectEntitiesCommand } from '@aws-sdk/client-comprehend';
+import { BedrockRuntimeClient, InvokeModelCommand } from '@aws-sdk/client-bedrock-runtime';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { SNSClient, PublishCommand } from '@aws-sdk/client-sns';
 
 // Mock AWS SDK clients
-jest.mock('@aws-sdk/client-comprehend', () => ({
-    ComprehendClient: jest.fn(() => ({
+jest.mock('@aws-sdk/client-bedrock-runtime', () => ({
+    BedrockRuntimeClient: jest.fn(() => ({
         send: jest.fn()
     })),
-    DetectEntitiesCommand: jest.fn()
+    InvokeModelCommand: jest.fn()
 }));
 
 jest.mock('@aws-sdk/lib-dynamodb', () => ({
@@ -46,19 +46,29 @@ describe('processTweet handler', () => {
             })
         };
 
-        const mockComprehendResponse = {
-            Entities: [
-                { Type: 'LOCATION', Text: 'downtown area' },
-                { Type: 'EVENT', Text: 'Flood warning' }
-            ]
+        const mockBedrockResponse = {
+            body: new TextEncoder().encode(JSON.stringify({
+                results: [{
+                    outputText: JSON.stringify({
+                        entities: [
+                            { text: 'downtown area', type: 'LOCATION', confidence: 0.8 },
+                            { text: 'Flood warning', type: 'EVENT', confidence: 0.9 }
+                        ],
+                        sentiment: { sentiment: 'NEGATIVE', confidence: 0.8 },
+                        keyPhrases: [{ text: 'Flood warning in downtown area', confidence: 0.9 }],
+                        disasterKeywords: ['flood', 'warning'],
+                        overallConfidence: 0.8
+                    })
+                }]
+            }))
         };
 
-        const mockComprehendSend = jest.fn().mockResolvedValue(mockComprehendResponse);
+        const mockBedrockSend = jest.fn().mockResolvedValue(mockBedrockResponse);
         const mockDynamoSend = jest.fn().mockResolvedValue({});
         const mockSNSSend = jest.fn().mockResolvedValue({});
 
-        (ComprehendClient as jest.Mock).mockImplementation(() => ({
-            send: mockComprehendSend
+        (BedrockRuntimeClient as jest.Mock).mockImplementation(() => ({
+            send: mockBedrockSend
         }));
         (DynamoDBDocumentClient.from as jest.Mock).mockReturnValue({
             send: mockDynamoSend
@@ -75,12 +85,12 @@ describe('processTweet handler', () => {
             verified: 1
         });
 
-        // Verify Comprehend was called
-        expect(mockComprehendSend).toHaveBeenCalledWith(
+        // Verify Bedrock was called
+        expect(mockBedrockSend).toHaveBeenCalledWith(
             expect.objectContaining({
                 input: expect.objectContaining({
-                    LanguageCode: 'en',
-                    Text: 'Flood warning in downtown area, roads blocked'
+                    modelId: 'amazon.titan-text-express-v1',
+                    contentType: 'application/json'
                 })
             })
         );
@@ -122,17 +132,27 @@ describe('processTweet handler', () => {
             })
         };
 
-        const mockComprehendResponse = {
-            Entities: [
-                { Type: 'LOCATION', Text: 'the area' }
-            ]
+        const mockBedrockResponse = {
+            body: new TextEncoder().encode(JSON.stringify({
+                results: [{
+                    outputText: JSON.stringify({
+                        entities: [
+                            { text: 'the area', type: 'LOCATION', confidence: 0.6 }
+                        ],
+                        sentiment: { sentiment: 'NEUTRAL', confidence: 0.5 },
+                        keyPhrases: [],
+                        disasterKeywords: [],
+                        overallConfidence: 0.3
+                    })
+                }]
+            }))
         };
 
-        const mockComprehendSend = jest.fn().mockResolvedValue(mockComprehendResponse);
+        const mockBedrockSend = jest.fn().mockResolvedValue(mockBedrockResponse);
         const mockDynamoSend = jest.fn().mockResolvedValue({});
 
-        (ComprehendClient as jest.Mock).mockImplementation(() => ({
-            send: mockComprehendSend
+        (BedrockRuntimeClient as jest.Mock).mockImplementation(() => ({
+            send: mockBedrockSend
         }));
         (DynamoDBDocumentClient.from as jest.Mock).mockReturnValue({
             send: mockDynamoSend
@@ -169,12 +189,24 @@ describe('processTweet handler', () => {
             body: '{"text": "Test disaster"}'
         };
 
-        const mockComprehendResponse = { Entities: [] };
-        const mockComprehendSend = jest.fn().mockResolvedValue(mockComprehendResponse);
+        const mockBedrockResponse = {
+            body: new TextEncoder().encode(JSON.stringify({
+                results: [{
+                    outputText: JSON.stringify({
+                        entities: [],
+                        sentiment: { sentiment: 'NEUTRAL', confidence: 0.5 },
+                        keyPhrases: [],
+                        disasterKeywords: [],
+                        overallConfidence: 0.3
+                    })
+                }]
+            }))
+        };
+        const mockBedrockSend = jest.fn().mockResolvedValue(mockBedrockResponse);
         const mockDynamoSend = jest.fn().mockResolvedValue({});
 
-        (ComprehendClient as jest.Mock).mockImplementation(() => ({
-            send: mockComprehendSend
+        (BedrockRuntimeClient as jest.Mock).mockImplementation(() => ({
+            send: mockBedrockSend
         }));
         (DynamoDBDocumentClient.from as jest.Mock).mockReturnValue({
             send: mockDynamoSend

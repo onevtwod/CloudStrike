@@ -118,9 +118,21 @@ export async function subscribeToAlerts(
         throw new ApiError('Enter a value', undefined, 'validation');
     }
 
+    // Check if this is a local development server (port 3001) or Lambda API
+    const isLocalDev = apiBase.includes('localhost:3001') || apiBase.includes('127.0.0.1:3001');
+
+    let payload: any;
+    if (isLocalDev) {
+        // Local development server expects { email, phone, ... } format
+        payload = kind === 'email' ? { email: value } : { phone: value };
+    } else {
+        // Lambda function expects { kind, value } format
+        payload = { kind, value };
+    }
+
     const data = await apiRequest<{ message: string }>(`${apiBase}/subscribe`, {
         method: 'POST',
-        body: JSON.stringify({ kind, value }),
+        body: JSON.stringify(payload),
     });
 
     if (!data || typeof data !== 'object' || typeof data.message !== 'string') {

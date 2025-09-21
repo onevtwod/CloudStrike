@@ -267,19 +267,28 @@ class DisasterAPIServer {
 
     async subscribeToAlerts(subscriber) {
         try {
+            // Check if subscriber already exists before storing
+            const existingSubscriber = await this.disasterSystem.storage.findExistingSubscriber(subscriber.email, subscriber.phone);
+            const isUpdate = !!existingSubscriber;
+
             // Store subscription using the enhanced subscriber system
-            await this.disasterSystem.storage.storeSubscriber(subscriber);
+            const storedSubscriber = await this.disasterSystem.storage.storeSubscriber(subscriber);
 
             const subscriptionType = subscriber.type === 'both' ? 'email and SMS' : subscriber.type;
             const contactInfo = subscriber.type === 'both' ?
                 `email: ${subscriber.email}, SMS: ${subscriber.phone}` :
                 subscriber.email ? `email: ${subscriber.email}` : `SMS: ${subscriber.phone}`;
 
+            const action = isUpdate ? 'updated' : 'subscribed';
+            const message = isUpdate ?
+                `Successfully ${action} your ${subscriptionType} subscription. Contact: ${contactInfo}. You will receive alerts for verified disaster events.` :
+                `Successfully ${action} for ${subscriptionType} alerts. Contact: ${contactInfo}. You will receive alerts for verified disaster events.`;
+
             return {
-                message: `Successfully subscribed for ${subscriptionType} alerts. Contact: ${contactInfo}. You will receive alerts for verified disaster events.`,
-                subscriptionId: subscriber.id,
+                message,
                 type: subscriber.type,
-                location: subscriber.location
+                location: subscriber.location,
+                action: action
             };
         } catch (error) {
             console.error('Error storing subscription:', error);
