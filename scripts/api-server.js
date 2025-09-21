@@ -98,21 +98,31 @@ class DisasterAPIServer {
         // Subscribe to alerts
         this.app.post('/subscribe', async (req, res) => {
             try {
-                const { kind, value } = req.body;
+                const { email, phone, type, preferences, location } = req.body;
 
-                if (!kind || !value) {
+                if (!email && !phone) {
                     return res.status(400).json({
-                        error: 'Missing required fields: kind and value'
+                        error: 'Missing required fields: email or phone must be provided'
                     });
                 }
 
-                if (!['email', 'sms'].includes(kind)) {
-                    return res.status(400).json({
-                        error: 'Invalid subscription kind. Must be "email" or "sms"'
-                    });
-                }
+                // Create subscriber object in the format expected by our enhanced system
+                const subscriber = {
+                    email: email || null,
+                    phone: phone || null,
+                    type: type || (email && phone ? 'both' : (email ? 'email' : 'sms')),
+                    preferences: preferences || {
+                        disasterAlerts: true,
+                        emergencyAlerts: true,
+                        verifications: true,
+                        systemStatus: true
+                    },
+                    location: location || 'Global',
+                    active: true,
+                    timestamp: new Date()
+                };
 
-                const result = await this.subscribeToAlerts(kind, value);
+                const result = await this.subscribeToAlerts(subscriber);
                 res.json(result);
             } catch (error) {
                 console.error('Error subscribing to alerts:', error);
@@ -132,6 +142,20 @@ class DisasterAPIServer {
                 console.error('Error fetching stats:', error);
                 res.status(500).json({
                     error: 'Failed to fetch statistics',
+                    message: error.message
+                });
+            }
+        });
+
+        // Get subscriber statistics
+        this.app.get('/subscribers/stats', async (req, res) => {
+            try {
+                const subscriberStats = await this.disasterSystem.getSubscriberStats();
+                res.json(subscriberStats);
+            } catch (error) {
+                console.error('Error fetching subscriber stats:', error);
+                res.status(500).json({
+                    error: 'Failed to fetch subscriber statistics',
                     message: error.message
                 });
             }
@@ -241,25 +265,21 @@ class DisasterAPIServer {
         }
     }
 
-    async subscribeToAlerts(kind, value) {
+    async subscribeToAlerts(subscriber) {
         try {
-            // Store subscription in DynamoDB
-            const subscription = {
-                id: `sub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                kind: kind,
-                value: value,
-                timestamp: new Date().toISOString(),
-                active: true
-            };
+            // Store subscription using the enhanced subscriber system
+            await this.disasterSystem.storage.storeSubscriber(subscriber);
 
-            await this.disasterSystem.storage.storeAlert({
-                ...subscription,
-                type: 'subscription'
-            });
+            const subscriptionType = subscriber.type === 'both' ? 'email and SMS' : subscriber.type;
+            const contactInfo = subscriber.type === 'both' ?
+                `email: ${subscriber.email}, SMS: ${subscriber.phone}` :
+                subscriber.email ? `email: ${subscriber.email}` : `SMS: ${subscriber.phone}`;
 
             return {
-                message: `Subscription requested for ${kind}: ${value}. You will receive alerts for verified disaster events.`,
-                subscriptionId: subscription.id
+                message: `Successfully subscribed for ${subscriptionType} alerts. Contact: ${contactInfo}. You will receive alerts for verified disaster events.`,
+                subscriptionId: subscriber.id,
+                type: subscriber.type,
+                location: subscriber.location
             };
         } catch (error) {
             console.error('Error storing subscription:', error);
@@ -285,7 +305,9 @@ class DisasterAPIServer {
             console.log(`📡 Health check: http://localhost:${this.port}/health`);
             console.log(`📊 Events endpoint: http://localhost:${this.port}/events`);
             console.log(`📈 Stats endpoint: http://localhost:${this.port}/stats`);
+            console.log(`👥 Subscriber stats: http://localhost:${this.port}/subscribers/stats`);
             console.log(`🔔 Subscribe endpoint: http://localhost:${this.port}/subscribe`);
+            console.log(`📤 Manual ingestion: http://localhost:${this.port}/ingest/twitter`);
         });
     }
 }

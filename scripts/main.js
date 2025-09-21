@@ -6,6 +6,7 @@ const DisasterVerificationSystem = require('./disaster-verification-system');
 const { RedditNewsScraper } = require('./reddit-news-scraper');
 const DynamoDBStorage = require('./dynamodb-storage');
 const WeatherAPIService = require('./weather-api-service');
+const EnhancedSNSNotifications = require('./enhanced-sns-notifications');
 const axios = require('axios');
 
 class ComprehensiveDisasterSystem {
@@ -16,6 +17,7 @@ class ComprehensiveDisasterSystem {
         this.redditScraper = new RedditNewsScraper();
         this.storage = new DynamoDBStorage();
         this.weatherService = new WeatherAPIService();
+        this.snsNotifications = new EnhancedSNSNotifications(this.storage);
 
         // Initialize Amazon Bedrock for translation
         this.bedrockRegion = process.env.AWS_REGION || 'us-east-1';
@@ -38,7 +40,7 @@ class ComprehensiveDisasterSystem {
         };
 
         console.log('🚀 Comprehensive Disaster Detection System Initialized');
-        console.log('🔍 Features: Real Reddit Data + AWS Comprehend + Image Analysis + Weather API Cross-check + Verification');
+        console.log('🔍 Features: Real Reddit Data + AWS Comprehend + Image Analysis + Weather API Cross-check + Verification + SNS Notifications');
     }
 
     async start() {
@@ -76,6 +78,9 @@ class ComprehensiveDisasterSystem {
 
                 // Check for disaster spikes
                 await this.detectDisasterSpikes();
+
+                // Check for newly verified events and send SNS notifications
+                await this.checkForVerifiedEvents();
 
                 // Update statistics
                 this.updateStats();
@@ -440,6 +445,25 @@ ${text}`;
                 console.error(`   ❌ Failed to store event in DynamoDB:`, storageError.message);
             }
 
+            // Send emergency notification for very high severity events
+            if (event.severity >= 0.9) {
+                try {
+                    const emergencyAlert = {
+                        id: `emergency_${event.id}`,
+                        location: event.location,
+                        severity: event.severity,
+                        eventCount: 1,
+                        timestamp: event.timestamp,
+                        events: [event]
+                    };
+
+                    await this.snsNotifications.sendEmergencyAlert(emergencyAlert);
+                    console.log(`   🚨 Emergency SNS notification sent for high-severity event: ${event.id}`);
+                } catch (snsError) {
+                    console.error(`   ❌ Failed to send emergency SNS notification:`, snsError.message);
+                }
+            }
+
         } catch (error) {
             console.error('❌ Error processing post:', error.message);
             console.error('   📝 Post details:', {
@@ -515,6 +539,21 @@ ${text}`;
         } catch (storageError) {
             console.error(`   ❌ Failed to store alert in DynamoDB:`, storageError.message);
         }
+
+        // Send SNS notification for disaster alert
+        try {
+            if (alert.severity >= 0.8) {
+                // Send emergency alert for high severity
+                await this.snsNotifications.sendEmergencyAlert(alert);
+                console.log(`   🚨 Emergency SNS notification sent for alert: ${alert.id}`);
+            } else {
+                // Send regular disaster alert
+                await this.snsNotifications.sendDisasterAlert(alert);
+                console.log(`   📢 Disaster alert SNS notification sent: ${alert.id}`);
+            }
+        } catch (snsError) {
+            console.error(`   ❌ Failed to send SNS notification for alert:`, snsError.message);
+        }
     }
 
     calculateAlertSeverity(events) {
@@ -523,6 +562,51 @@ ${text}`;
 
         // Higher severity for more events and higher individual severity
         return Math.min(1.0, avgSeverity + (eventCount * 0.1));
+    }
+
+    // Handle verification notifications
+    async handleVerificationNotification(event, verification) {
+        try {
+            console.log(`📢 Sending verification SNS notification for event ${event.id}`);
+
+            // Send SNS verification notification
+            await this.snsNotifications.sendVerificationNotification(event, verification);
+            console.log(`   ✅ Verification SNS notification sent for event: ${event.id}`);
+
+        } catch (snsError) {
+            console.error(`   ❌ Failed to send verification SNS notification:`, snsError.message);
+        }
+    }
+
+    // Check for newly verified events and send notifications
+    async checkForVerifiedEvents() {
+        try {
+            const verifiedEvents = this.verificationSystem.getVerifiedEvents();
+            const currentVerifiedCount = this.analysisStats.verifiedEvents;
+
+            // Check if there are new verified events
+            if (verifiedEvents.length > currentVerifiedCount) {
+                console.log(`🔍 Found ${verifiedEvents.length - currentVerifiedCount} newly verified events`);
+
+                // Get the newly verified events
+                const newVerifiedEvents = verifiedEvents.slice(currentVerifiedCount);
+
+                for (const event of newVerifiedEvents) {
+                    // Create a verification object for the notification
+                    const verification = {
+                        source: event.verificationSource || 'Unknown Source',
+                        type: event.verificationType || 'automated',
+                        confidence: event.verificationConfidence || 0.8,
+                        timestamp: event.verificationTimestamp || new Date()
+                    };
+
+                    // Send SNS notification for the newly verified event
+                    await this.handleVerificationNotification(event, verification);
+                }
+            }
+        } catch (error) {
+            console.error('❌ Error checking for verified events:', error.message);
+        }
     }
 
     updateStats() {
@@ -536,19 +620,167 @@ ${text}`;
         console.log(`   🌦️  Weather Cross-checked: ${this.analysisStats.weatherCrossChecked}`);
         console.log(`   ✅ Verified Events: ${this.analysisStats.verifiedEvents}`);
         console.log(`   ❌ False Positives: ${this.analysisStats.falsePositives}`);
+
+        // Send periodic system status notifications (every 10 cycles)
+        if (this.analysisStats.totalPosts % 100 === 0 && this.analysisStats.totalPosts > 0) {
+            this.sendSystemStatusNotification();
+        }
+    }
+
+    // Send system status notification
+    async sendSystemStatusNotification() {
+        try {
+            const verificationStats = this.verificationSystem.getVerificationStats();
+
+            const status = {
+                statistics: {
+                    rawPosts: this.analysisStats.totalPosts,
+                    analyzedPosts: this.analysisStats.analyzedPosts,
+                    events: this.events.length,
+                    alerts: this.events.filter(e => e.eventCount).length,
+                    verifications: this.analysisStats.verifiedEvents,
+                    lastUpdated: new Date().toISOString()
+                },
+                health: this.determineSystemHealth()
+            };
+
+            await this.snsNotifications.sendSystemStatus(status);
+            console.log(`   📊 System status SNS notification sent`);
+
+        } catch (snsError) {
+            console.error(`   ❌ Failed to send system status SNS notification:`, snsError.message);
+        }
+    }
+
+    // Determine system health based on statistics
+    determineSystemHealth() {
+        const errorRate = this.analysisStats.falsePositives / Math.max(this.analysisStats.analyzedPosts, 1);
+        const processingRate = this.analysisStats.analyzedPosts / Math.max(this.analysisStats.totalPosts, 1);
+
+        if (errorRate > 0.3 || processingRate < 0.5) {
+            return 'DEGRADED';
+        } else if (errorRate > 0.1 || processingRate < 0.8) {
+            return 'WARNING';
+        } else {
+            return 'HEALTHY';
+        }
     }
 
     async getSystemStatus() {
         const verificationStats = this.verificationSystem.getVerificationStats();
+        const subscriberStats = await this.getSubscriberStats();
 
         return {
             analysis: this.analysisStats,
             verification: verificationStats,
+            subscribers: subscriberStats,
             totalEvents: this.events.length,
             recentEvents: this.events.filter(event =>
                 Date.now() - event.timestamp.getTime() < 60 * 60 * 1000 // Last hour
             ).length
         };
+    }
+
+    // Test SNS notification system with subscribers
+    async testSNSNotifications() {
+        try {
+            console.log('🧪 Testing Enhanced SNS notification system with DynamoDB subscribers...');
+
+            // Test the enhanced SNS notifications with sample subscribers
+            return await this.snsNotifications.testNotificationsWithSubscribers();
+
+        } catch (error) {
+            console.error('❌ Error testing Enhanced SNS notifications:', error.message);
+            return false;
+        }
+    }
+
+    // Add sample subscribers for testing
+    async addSampleSubscribers() {
+        try {
+            console.log('📝 Adding sample subscribers for testing...');
+
+            const sampleSubscribers = [
+                {
+                    email: 'admin@example.com',
+                    type: 'email',
+                    preferences: {
+                        disasterAlerts: true,
+                        emergencyAlerts: true,
+                        verifications: true,
+                        systemStatus: true
+                    },
+                    location: 'Kuala Lumpur'
+                },
+                {
+                    phone: '+60123456789',
+                    type: 'sms',
+                    preferences: {
+                        disasterAlerts: true,
+                        emergencyAlerts: true,
+                        verifications: false,
+                        systemStatus: false
+                    }
+                },
+                {
+                    email: 'emergency@example.com',
+                    phone: '+60198765432',
+                    type: 'both',
+                    preferences: {
+                        disasterAlerts: true,
+                        emergencyAlerts: true,
+                        verifications: true,
+                        systemStatus: true
+                    },
+                    location: 'Kuala Lumpur'
+                }
+            ];
+
+            for (const subscriber of sampleSubscribers) {
+                await this.storage.storeSubscriber(subscriber);
+            }
+
+            console.log(`✅ Added ${sampleSubscribers.length} sample subscribers`);
+            return true;
+
+        } catch (error) {
+            console.error('❌ Error adding sample subscribers:', error.message);
+            return false;
+        }
+    }
+
+    // Get subscriber statistics
+    async getSubscriberStats() {
+        try {
+            const allSubscribers = await this.storage.getActiveSubscribers();
+            const disasterAlertSubscribers = await this.storage.getActiveSubscribers('disasterAlerts');
+            const emergencySubscribers = await this.storage.getActiveSubscribers('emergencyAlerts');
+            const verificationSubscribers = await this.storage.getActiveSubscribers('verifications');
+            const statusSubscribers = await this.storage.getActiveSubscribers('systemStatus');
+
+            return {
+                total: allSubscribers.length,
+                disasterAlerts: disasterAlertSubscribers.length,
+                emergencyAlerts: emergencySubscribers.length,
+                verifications: verificationSubscribers.length,
+                systemStatus: statusSubscribers.length,
+                byType: {
+                    email: allSubscribers.filter(s => s.type === 'email').length,
+                    sms: allSubscribers.filter(s => s.type === 'sms').length,
+                    both: allSubscribers.filter(s => s.type === 'both').length
+                }
+            };
+        } catch (error) {
+            console.error('❌ Error getting subscriber stats:', error.message);
+            return {
+                total: 0,
+                disasterAlerts: 0,
+                emergencyAlerts: 0,
+                verifications: 0,
+                systemStatus: 0,
+                byType: { email: 0, sms: 0, both: 0 }
+            };
+        }
     }
 
     async stop() {

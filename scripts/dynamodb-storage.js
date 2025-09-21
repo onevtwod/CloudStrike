@@ -34,7 +34,8 @@ class DynamoDBStorage {
             analyzedPosts: 'disaster-analyzed-posts',
             events: 'disaster-events',
             alerts: 'disaster-alerts',
-            verifications: 'disaster-verifications'
+            verifications: 'disaster-verifications',
+            subscribers: 'disaster-subscribers'
         };
 
         console.log('🗄️  DynamoDB Storage initialized');
@@ -395,6 +396,173 @@ class DynamoDBStorage {
 
         } catch (error) {
             console.error('❌ Error in batch store analyzed posts:', error.message);
+            throw error;
+        }
+    }
+
+    // Store subscriber
+    async storeSubscriber(subscriber) {
+        try {
+            const item = {
+                id: subscriber.id || `sub_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                email: subscriber.email || null,
+                phone: subscriber.phone || null,
+                type: subscriber.type || 'email', // email, sms, both
+                preferences: subscriber.preferences || {
+                    disasterAlerts: true,
+                    emergencyAlerts: true,
+                    verifications: true,
+                    systemStatus: false
+                },
+                location: subscriber.location || 'unknown', // Optional: location-specific alerts (use 'unknown' instead of null for GSI compatibility)
+                active: subscriber.active !== false, // Default to true
+                subscribedAt: subscriber.subscribedAt || new Date().toISOString(),
+                lastNotified: null,
+                createdAt: new Date().toISOString(),
+                ttl: Math.floor(Date.now() / 1000) + (365 * 24 * 60 * 60) // 1 year TTL
+            };
+
+            const command = new PutCommand({
+                TableName: this.tables.subscribers,
+                Item: item
+            });
+
+            await this.docClient.send(command);
+            console.log(`   💾 Subscriber stored: ${item.id}`);
+            return item;
+
+        } catch (error) {
+            if (error.name === 'ResourceNotFoundException') {
+                console.error(`❌ DynamoDB table '${this.tables.subscribers}' not found. Please run: node scripts/create-subscribers-table.js`);
+                console.error('   This will create the required DynamoDB table for storing subscribers.');
+            } else {
+                console.error('❌ Error storing subscriber:', error.message);
+            }
+            throw error;
+        }
+    }
+
+    // Get all active subscribers
+    async getActiveSubscribers(preference = null) {
+        try {
+            let filterExpression = 'active = :active';
+            let expressionAttributeValues = { ':active': true };
+            let expressionAttributeNames = {};
+
+            // Add preference filter if specified
+            if (preference) {
+                filterExpression += ' AND preferences.#pref = :prefValue';
+                expressionAttributeValues[':prefValue'] = true;
+                expressionAttributeNames['#pref'] = preference;
+            }
+
+            const command = new ScanCommand({
+                TableName: this.tables.subscribers,
+                FilterExpression: filterExpression,
+                ExpressionAttributeValues: expressionAttributeValues,
+                ExpressionAttributeNames: Object.keys(expressionAttributeNames).length > 0 ? expressionAttributeNames : undefined
+            });
+
+            const response = await this.docClient.send(command);
+            console.log(`   📊 Found ${response.Items?.length || 0} active subscribers`);
+            return response.Items || [];
+
+        } catch (error) {
+            if (error.name === 'ResourceNotFoundException') {
+                console.error(`❌ DynamoDB table '${this.tables.subscribers}' not found. Please run: node scripts/create-subscribers-table.js`);
+                console.error('   This will create the required DynamoDB table for storing subscribers.');
+            } else {
+                console.error('❌ Error getting active subscribers:', error.message);
+            }
+            return [];
+        }
+    }
+
+    // Get subscribers by location
+    async getSubscribersByLocation(location, preference = null) {
+        try {
+            let filterExpression = 'active = :active AND #loc = :location';
+            let expressionAttributeValues = {
+                ':active': true,
+                ':location': location
+            };
+            let expressionAttributeNames = {
+                '#loc': 'location' // Use alias for reserved keyword 'location'
+            };
+
+            // Add preference filter if specified
+            if (preference) {
+                filterExpression += ' AND preferences.#pref = :prefValue';
+                expressionAttributeValues[':prefValue'] = true;
+                expressionAttributeNames['#pref'] = preference;
+            }
+
+            const command = new ScanCommand({
+                TableName: this.tables.subscribers,
+                FilterExpression: filterExpression,
+                ExpressionAttributeValues: expressionAttributeValues,
+                ExpressionAttributeNames: expressionAttributeNames
+            });
+
+            const response = await this.docClient.send(command);
+            console.log(`   📊 Found ${response.Items?.length || 0} subscribers for location: ${location}`);
+            return response.Items || [];
+
+        } catch (error) {
+            if (error.name === 'ResourceNotFoundException') {
+                console.error(`❌ DynamoDB table '${this.tables.subscribers}' not found. Please run: node scripts/create-subscribers-table.js`);
+                console.error('   This will create the required DynamoDB table for storing subscribers.');
+            } else {
+                console.error('❌ Error getting subscribers by location:', error.message);
+            }
+            return [];
+        }
+    }
+
+    // Update subscriber notification timestamp
+    async updateSubscriberLastNotified(subscriberId, notificationType) {
+        try {
+            const command = new UpdateCommand({
+                TableName: this.tables.subscribers,
+                Key: { id: subscriberId },
+                UpdateExpression: 'SET lastNotified = :timestamp, lastNotificationType = :type',
+                ExpressionAttributeValues: {
+                    ':timestamp': new Date().toISOString(),
+                    ':type': notificationType
+                },
+                ReturnValues: 'ALL_NEW'
+            });
+
+            const response = await this.docClient.send(command);
+            console.log(`   ✅ Subscriber ${subscriberId} notification timestamp updated`);
+            return response.Attributes;
+
+        } catch (error) {
+            console.error('❌ Error updating subscriber notification timestamp:', error.message);
+            throw error;
+        }
+    }
+
+    // Unsubscribe a subscriber
+    async unsubscribeSubscriber(subscriberId) {
+        try {
+            const command = new UpdateCommand({
+                TableName: this.tables.subscribers,
+                Key: { id: subscriberId },
+                UpdateExpression: 'SET active = :active, unsubscribedAt = :timestamp',
+                ExpressionAttributeValues: {
+                    ':active': false,
+                    ':timestamp': new Date().toISOString()
+                },
+                ReturnValues: 'ALL_NEW'
+            });
+
+            const response = await this.docClient.send(command);
+            console.log(`   ✅ Subscriber ${subscriberId} unsubscribed`);
+            return response.Attributes;
+
+        } catch (error) {
+            console.error('❌ Error unsubscribing subscriber:', error.message);
             throw error;
         }
     }

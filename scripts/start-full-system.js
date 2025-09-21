@@ -48,7 +48,9 @@ async function checkDynamoDBTables() {
             'disaster-analyzed-posts',
             'disaster-events',
             'disaster-alerts',
-            'disaster-verifications'
+            'disaster-verifications',
+            'disaster-subscribers',
+            'disaster-notifications-sent'
         ];
 
         const existingTables = response.TableNames || [];
@@ -59,7 +61,10 @@ async function checkDynamoDBTables() {
             missingTables.forEach(table => {
                 console.log(`   - ${table}`);
             });
-            console.log('\n💡 Please run: node create-dynamodb-tables.js');
+            console.log('\n💡 Please run the following commands:');
+            console.log('   node create-dynamodb-tables.js');
+            console.log('   node create-subscribers-table.js');
+            console.log('   node create-notifications-tracking-table.js');
             return false;
         }
 
@@ -93,8 +98,10 @@ async function startSystem() {
     console.log('\n📋 Available endpoints:');
     console.log(`   GET  http://localhost:${process.env.PORT || 3001}/events`);
     console.log(`   GET  http://localhost:${process.env.PORT || 3001}/events/recent`);
+    console.log(`   GET  http://localhost:${process.env.PORT || 3001}/events/location/:location`);
     console.log(`   POST http://localhost:${process.env.PORT || 3001}/subscribe`);
     console.log(`   GET  http://localhost:${process.env.PORT || 3001}/stats`);
+    console.log(`   GET  http://localhost:${process.env.PORT || 3001}/subscribers/stats`);
     console.log(`   POST http://localhost:${process.env.PORT || 3001}/ingest/twitter`);
 
     console.log('\n🌐 Web Frontend:');
